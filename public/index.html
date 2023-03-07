@@ -1,0 +1,153 @@
+<html>
+  <header>
+    <meta charset="utf8" />
+    <link rel="stylesheet" href="css/normalize.css" />
+    <link rel="stylesheet" href="css/grid.css" />
+    <link rel="stylesheet" href="css/style.css" />
+    <script src="/socket.io/socket.io.js"></script>
+    <link rel="stylesheet" href="css/prism.css" />
+    <script src="js/prism.js"></script>
+  </header>
+  <body>
+    <div class="row">
+      <div class="col-3 bg-light left-menu">
+        <div class="header">Log:</div>
+        <ul id="menu_log_files"></ul>
+      </div>
+      <div class="offset-per col-8">
+        <span class="header"
+          >Project: <span id="project_name" class="word-break"></span></span
+        ><br />
+        <span class="header"
+          >Filename: <span id="file_name" class="word-break"></span></span
+        ><br />
+        <span class="header"
+          >Datetime: <span id="datetime" class="word-break"></span
+        ></span>
+        <div id="main_container"></div>
+      </div>
+    </div>
+    <script>
+      let socket = io.connect(location.origin + "/student");
+
+      socket.on("allLog", (arr) => {
+        menu_log_files.textContent = "";
+        for (let i = 0; i < arr.length; i++) {
+          newLog(arr[i]);
+        }
+      });
+
+      socket.on("newLog", (data) => {
+        newLog(data);
+      });
+
+      //Построение одного элемента меню
+      function newLog({
+        timestamp,
+        filename,
+        version,
+        currentProjectName,
+        isRemoveFile,
+      }) {
+        let li = document.createElement("li");
+        li.innerHTML = `
+          <li class="word-break">
+            <a class="nav-link" style="color:green" data-version="${version}"
+              data-filename="${filename}" data-timestamp="${timestamp}" 
+              data-projectname="${currentProjectName}" data-remove="${!!isRemoveFile}" href="#">
+              ${filename.split("|").join(" / ") + " ver." + version}
+            </a>
+          </li>`;
+
+        if (isRemoveFile) li.classList.add("line-through");
+
+        menu_log_files.prepend(li);
+      }
+
+      //Запрос файла с изменениями по клику на элементе меню
+      menu_log_files.addEventListener("click", (e) => {
+        e.preventDefault();
+        let elamA = e.target;
+        if (elamA.tagName === "A") {
+          let filename = elamA.dataset.filename;
+          let version = elamA.dataset.version;
+          let timestamp = parseInt(elamA.dataset.timestamp);
+          if (elamA.dataset.remove === "true") {
+            renderingRequestedFileWithChanges({
+              timestamp,
+              filename,
+              projectName: elamA.dataset.projectname,
+              addLines: "",
+              arrRemoveLines: [],
+              version,
+              fileContent: "File removed",
+            });
+          } else {
+            socket.emit("getFileContent", { timestamp, filename, version });
+          }
+
+          elamA.style.color = "";
+        }
+      });
+
+      socket.on("fileContent", renderingRequestedFileWithChanges);
+
+      //Отрисовка запрошенного файла с изменениями
+      function renderingRequestedFileWithChanges({
+        projectName,
+        filename,
+        timestamp,
+        version,
+        addLines,
+        arrRemoveLines,
+        extname,
+        fileContent,
+      }) {
+        project_name.textContent = projectName;
+        file_name.textContent = `${filename
+          .split("|")
+          .join(" / ")} ver.${version}`;
+        datetime.textContent = new Date(timestamp).toLocaleString();
+
+        let elemPre = document.createElement("pre");
+        elemPre.id = "code";
+        elemPre.classList.add("line-numbers");
+        elemPre.setAttribute("data-line", addLines);
+
+        let elemCode = document.createElement("code");
+
+        let code;
+        if (extname === ".js" || extname === ".json") {
+          elemCode.classList.add("language-javascript");
+        } else if (extname === ".css") {
+          elemCode.classList.add("language-css");
+        } else {
+          elemCode.classList.add("language-markup");
+        }
+
+        elemCode.textContent = fileContent;
+        elemPre.append(elemCode);
+        main_container.textContent = "";
+        main_container.append(elemPre);
+        Prism.highlightAll();
+
+        if (arrRemoveLines.length) createRemoveLines(elemPre, arrRemoveLines);
+      }
+
+      //Функция отрисовки красных линий сигнализирующих об удалении строк в файле с кодом
+      function createRemoveLines(parentElem, arrRemoveLines) {
+        let heightRow =
+          parseInt(window.getComputedStyle(main_container).fontSize) * 1.5;
+
+        let arrDivRemoveLines = arrRemoveLines.map((countRows) => {
+          let elemDiv = document.createElement("div");
+          elemDiv.style.top = `${heightRow * countRows - 2}px`;
+          elemDiv.classList.add("code-remove-line");
+          return elemDiv;
+        });
+
+        parentElem.append(...arrDivRemoveLines);
+      }
+    </script>
+  </body>
+</html>
